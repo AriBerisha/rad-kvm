@@ -1,0 +1,26 @@
+# Vendor OS image (6 GB) — do not commit
+*.img
+*.img.xz
+*.img.gz
+
+# Raw extraction scratch (regenerable from the image)
+image-extract/
+
+# Build artifacts
+*.dtbo
+*.ko
+*.o
+*.mod
+*.mod.c
+*.cmd
+.tmp_versions/
+modules.order
+Module.symvers
+
+# OS / editor junk
+.DS_Store
+
+# Local run logs and scratch (curated board scripts live in scripts/)
+output-latest.log
+*.log
+tmp/

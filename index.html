@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAD·KVM — KVM over IP on one Radxa Dragon Q6A</title>
+<meta name="description" content="Take a headless machine's HDMI as video and give back keyboard, mouse and a virtual drive — in your browser, on one Radxa Dragon Q6A. No cloud, no account, nothing on the far end.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=Fragment+Mono:ital@0;1&family=Saira+Stencil+One&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ground:#e7ece7;        /* soft pale board, easy on the eyes */
+    --paper:#f3f6f1;         /* lifted panels */
+    --ink:#1c2a26;           /* deep teal-charcoal text */
+    --dim:#5f7168;
+    --teal:#0c9e86;          /* radxa, deepened for light bg */
+    --teal-br:#15c4a7;
+    --copper:#a7762b;        /* second, structural accent */
+    --copper-d:#7e591f;
+    --hair:rgba(28,42,38,.16);
+    --hair-2:rgba(28,42,38,.085);
+    --shadow:rgba(28,42,38,.10);
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:"Familjen Grotesk",system-ui,sans-serif;
+    font-size:16px; line-height:1.62; letter-spacing:.1px;
+    -webkit-font-smoothing:antialiased; min-height:100vh;
+  }
+  #traces{position:fixed; inset:0; width:100%; height:100%; z-index:0; pointer-events:none; opacity:.9}
+  a{color:var(--teal); text-decoration:none; border-bottom:1px solid rgba(12,158,134,.34)}
+  a:hover{border-bottom-color:var(--teal)}
+  a:focus-visible,button:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
+  ::selection{background:rgba(12,158,134,.2)}
+  b{font-weight:600}
+
+  .wrap{position:relative; z-index:1; max-width:860px; margin:0 auto; padding:0 24px}
+
+  /* faceplate header — double hairline */
+  .plate{display:flex; align-items:flex-end; justify-content:space-between; gap:20px;
+    padding:30px 0 16px; border-bottom:3px double var(--hair)}
+  .brand{font-family:"Saira Stencil One",sans-serif; font-size:24px; letter-spacing:1px;
+    line-height:1; color:var(--ink)}
+  .brand .d{color:var(--teal)}
+  .plate .id{font-family:"Fragment Mono",monospace; font-size:10.5px; letter-spacing:1px;
+    color:var(--dim); text-align:right; line-height:1.7}
+  .plate .id b{color:var(--copper); font-weight:400}
+
+  /* annotated grid: designator gutter + content */
+  .row{display:grid; grid-template-columns:104px 1fr; gap:0 30px;
+    border-bottom:1px solid var(--hair-2); padding:44px 0}
+  .row:last-of-type{border-bottom:0}
+  .desig{font-family:"Fragment Mono",monospace; font-size:11px; letter-spacing:1px;
+    color:var(--copper); padding-top:5px}
+  .desig .sub{display:block; color:var(--dim); font-size:9.5px; letter-spacing:1.5px;
+    text-transform:uppercase; margin-top:6px}
+  .body{min-width:0}
+  @media(max-width:640px){
+    .row{grid-template-columns:1fr; gap:14px; padding:34px 0}
+    .desig{padding-top:0}
+  }
+
+  /* hero */
+  .hero{padding-top:52px}
+  .kicker{font-family:"Fragment Mono",monospace; font-size:11px; letter-spacing:2px;
+    text-transform:uppercase; color:var(--teal)}
+  h1.head{font-weight:700; font-size:clamp(36px,6.4vw,62px); line-height:1.0;
+    letter-spacing:-1.6px; margin:18px 0 0; max-width:15ch; color:var(--ink)}
+  h1.head .teal{color:var(--teal)}
+  .lede{font-size:clamp(16px,2.4vw,19.5px); line-height:1.55; max-width:52ch; margin:22px 0 0;
+    color:#384a44}
+  .lede b{color:var(--ink); font-weight:600}
+
+  /* install block — both routes together, the centerpiece */
+  .install{margin-top:32px; border:1px solid var(--hair); border-radius:8px;
+    background:var(--paper); box-shadow:0 14px 30px -22px var(--shadow), 0 1px 0 #fff inset;
+    overflow:hidden}
+  .route{display:flex; align-items:center; gap:16px; padding:18px}
+  .route + .route{border-top:1px solid var(--hair-2)}
+  .route .lead{font-family:"Fragment Mono",monospace; font-size:10px; letter-spacing:1.5px;
+    text-transform:uppercase; color:var(--copper); width:52px; flex:none; line-height:1.4}
+  .route .main{flex:1; min-width:0}
+  .cmdline{font-family:"Fragment Mono",monospace; font-size:13.5px; line-height:1.5;
+    margin:0; overflow-x:auto; white-space:nowrap; color:#243531}
+  .cmdline .p{color:var(--teal); user-select:none; margin-right:9px}
+  .cmdline .c{color:var(--teal); font-weight:500}
+  .cur{display:inline-block; width:8px; height:14px; vertical-align:-2px; margin-left:1px;
+    background:var(--teal); animation:blink 1.05s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+  .route .note{font-size:13px; color:var(--dim); margin:4px 0 0; line-height:1.45; white-space:normal}
+  .imglink{font-family:"Fragment Mono",monospace; font-size:14.5px; color:var(--teal); font-weight:500}
+  .imglink .sz{color:var(--dim); font-size:11.5px; margin-left:6px; letter-spacing:.5px; font-weight:400}
+  button.copy{font-family:"Fragment Mono",monospace; font-size:10.5px; letter-spacing:1px;
+    text-transform:uppercase; color:#06221d; background:var(--teal-br); border:0;
+    padding:10px 14px; border-radius:5px; cursor:pointer; font-weight:400; flex:none;
+    white-space:nowrap; box-shadow:0 2px 8px -2px rgba(12,158,134,.5)}
+  button.copy:hover{filter:brightness(1.05)} button.copy:active{transform:translateY(1px)}
+  .then{font-family:"Fragment Mono",monospace; font-size:12.5px; color:var(--dim);
+    margin:16px 2px 0; line-height:1.6}
+  .then b{color:var(--ink); font-weight:400} .then .teal{color:var(--teal); font-weight:500}
+
+  /* content */
+  h2{font-family:"Familjen Grotesk",sans-serif; font-weight:600; font-size:22px;
+    letter-spacing:-.4px; margin:0 0 13px; line-height:1.25; color:var(--ink)}
+  p{margin:0 0 13px; max-width:64ch; color:#33433e}
+  p:last-child{margin-bottom:0}
+  p.muted{color:var(--dim)}
+
+  .flow{font-family:"Fragment Mono",monospace; font-size:11px; line-height:1.55;
+    color:#3a4d47; background:var(--paper); border:1px solid var(--hair-2); border-radius:8px;
+    padding:18px 14px; overflow-x:auto; white-space:pre; margin:0; box-shadow:0 1px 0 #fff inset}
+  .flow b{color:var(--teal); font-weight:500} .flow .o{color:var(--copper)} .flow .dim{color:var(--dim)}
+
+  dl.spec{margin:0}
+  dl.spec div{display:grid; grid-template-columns:134px 1fr; gap:0 16px;
+    border-top:1px dotted var(--hair-2); padding:9px 0; align-items:baseline}
+  dl.spec div:first-child{border-top:0}
+  dl.spec dt{font-family:"Fragment Mono",monospace; font-size:10.5px; letter-spacing:1px;
+    text-transform:uppercase; color:var(--copper)}
+  dl.spec dd{margin:0; font-size:14px; color:#2b3a35}
+  dl.spec dd b{color:var(--teal); font-weight:600}
+  @media(max-width:440px){dl.spec div{grid-template-columns:1fr; gap:1px}}
+
+  /* boards / compatibility */
+  .boards{display:grid; gap:10px}
+  .brd{display:grid; grid-template-columns:84px 1fr; gap:0 16px; align-items:baseline;
+    border:1px solid var(--hair-2); border-radius:7px; padding:13px 15px; background:var(--paper)}
+  @media(max-width:480px){.brd{grid-template-columns:1fr; gap:5px}}
+  .brd .tag{font-family:"Fragment Mono",monospace; font-size:9.5px; letter-spacing:1px;
+    text-transform:uppercase; padding-top:3px}
+  .brd.ok{border-left:3px solid var(--teal)}
+  .brd.ok .tag{color:var(--teal)}
+  .brd.maybe{border-left:3px solid var(--copper)}
+  .brd.maybe .tag{color:var(--copper)}
+  .brd h4{margin:0 0 3px; font-size:14.5px; font-weight:600; color:var(--ink)}
+  .brd p{margin:0; font-size:12.5px; color:var(--dim); max-width:none}
+
+  footer{display:flex; flex-wrap:wrap; gap:8px 18px; justify-content:space-between;
+    align-items:flex-end; padding:26px 0 50px; color:var(--dim); font-size:12.5px;
+    border-top:3px double var(--hair); margin-top:6px}
+  footer a{color:var(--dim); border:0} footer a:hover{color:var(--teal)}
+  .stamp{font-family:"Fragment Mono",monospace; font-size:10px; letter-spacing:1px; color:var(--copper-d)}
+  .note{font-size:11px; color:#7a8b83; max-width:46ch; margin-top:6px}
+
+  @media(prefers-reduced-motion:reduce){.cur{animation:none}}
+</style>
+</head>
+<body>
+<canvas id="traces" aria-hidden="true"></canvas>
+<div class="wrap">
+
+  <div class="plate">
+    <div class="brand">RAD<span class="d">·</span>KVM</div>
+    <div class="id">MODEL <b>Q6A-KVM</b> · REV 0.1<br>OPEN SOURCE · BUILT BY HAND</div>
+  </div>
+
+  <div class="hero">
+    <div class="kicker">KVM over IP · Radxa Dragon Q6A</div>
+    <h1 class="head">A KVM-over-IP you can hold in <span class="teal">one hand</span>.</h1>
+    <p class="lede">It takes a headless machine's HDMI in as video and gives back keyboard,
+      mouse and a virtual drive — <b>in your browser</b>, on one small board. No cloud, no
+      account, nothing installed on the far end.</p>
+  </div>
+
+  <!-- J1 · INSTALL — both routes together -->
+  <div class="row">
+    <div class="desig">J1<span class="sub">install</span></div>
+    <div class="body">
+      <div class="install">
+        <div class="route">
+          <div class="lead">A · build</div>
+          <div class="main">
+            <pre class="cmdline"><span class="p">$</span><code id="cmd"></code><span class="cur" id="cur"></span></pre>
+            <p class="note">Clone &amp; run on RadxaOS — builds the driver, USB gadget and web UI from source, on the board.</p>
+          </div>
+          <button class="copy" onclick="cp(this)">copy</button>
+        </div>
+        <div class="route">
+          <div class="lead">B · flash</div>
+          <div class="main">
+            <a class="imglink" href="https://github.com/AriBerisha/rad-kvm/releases">&#8595; rad-kvm-q6a.img.gz<span class="sz">1.1 GB</span></a>
+            <p class="note">Pre-baked card image. Write it with balenaEtcher or Raspberry Pi Imager, boot on Ethernet — no shell needed.</p>
+          </div>
+        </div>
+      </div>
+      <p class="then">&#8594; reboot, then open <b>http://rad-kvm.local<span class="teal">:8000</span></b> and set a password.</p>
+    </div>
+  </div>
+
+  <!-- U1 · OVERVIEW -->
+  <div class="row">
+    <div class="desig">U1<span class="sub">overview</span></div>
+    <div class="body">
+      <h2>A whole KVM, soldered to nothing</h2>
+      <p>RAD-KVM turns a Radxa Dragon Q6A into a PiKVM-class appliance. It captures the target
+        machine's HDMI through a Toshiba bridge over MIPI CSI-2, and presents itself as a USB
+        keyboard, mouse and flash drive on the other end — so you get the live screen and full
+        control, plus Wake-on-LAN, shortcuts and macros, from any browser on your network.</p>
+      <p class="muted">Built the slow way: a vendored, patched kernel driver; a device-tree merge
+        the bootloader actually honours; one dependency-free Go binary serving the interface. The
+        full bring-up — every dead end included — is written up in the repo.</p>
+    </div>
+  </div>
+
+  <!-- U2 · SIGNAL PATH -->
+  <div class="row">
+    <div class="desig">U2<span class="sub">signal path</span></div>
+    <div class="body">
+<div class="flow">  <span class="dim">target machine</span>                                      <span class="dim">your laptop / phone</span>
+  &#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;  HDMI   &#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;  CSI-2  &#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;  MJPEG   &#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;
+  &#9474;  headless &#9474; &#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9658; &#9474; <b>TC358743</b> &#9474; &#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9658; &#9474;  <b>Q6A</b>  &#9474; &#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9658; &#9474; <b>:8000</b> ui  &#9474;
+  &#9474;    PC     &#9474;         &#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;         &#9492;&#9472;&#9472;&#9472;&#9516;&#9472;&#9472;&#9472;&#9496; over lan &#9492;&#9472;&#9472;&#9472;&#9472;&#9516;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;
+  &#9474;           &#9474; &#9664;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;  <span class="o">USB HID gadget</span>  &#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;                   &#9474;
+  &#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;  <span class="dim">keyboard &middot; mouse &middot; drive</span> &#9664;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;  your clicks  &#9472;&#9472;&#9472;&#9472;&#9472;&#9496;</div>
+      <p class="muted" style="margin-top:14px">Video out one way, control back the other, over a
+        single network. The target runs no software and never knows it isn't a real monitor and keyboard.</p>
+    </div>
+  </div>
+
+  <!-- U3 · SPEC -->
+  <div class="row">
+    <div class="desig">U3<span class="sub">spec</span></div>
+    <div class="body">
+      <dl class="spec">
+        <div><dt>board</dt><dd>Radxa Dragon Q6A — Qualcomm <b>QCS6490</b>, GbE, WiFi 6</dd></div>
+        <div><dt>capture</dt><dd>HDMI &#8594; TC358743 &#8594; MIPI CSI-2, up to <b>720p60 / 1080p30</b></dd></div>
+        <div><dt>control</dt><dd>USB gadget — keyboard, absolute mouse, mass-storage</dd></div>
+        <div><dt>video</dt><dd>MJPEG over HTTP, ~6% of one core</dd></div>
+        <div><dt>software</dt><dd>one Go binary · single-user auth · zero external deps</dd></div>
+        <div><dt>tools</dt><dd>Wake-on-LAN · shortcuts · macros · type &amp; paste</dd></div>
+        <div><dt>find it</dt><dd><b>rad-kvm.local:8000</b> over mDNS — no IP hunting</dd></div>
+        <div><dt>licence</dt><dd>open source — read it, fork it, keep it</dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <!-- U4 · BOARDS / COMPATIBILITY -->
+  <div class="row">
+    <div class="desig">U4<span class="sub">boards</span></div>
+    <div class="body">
+      <h2>What it runs on</h2>
+      <p>RAD-KVM is written for, and tested on, one board. The recipe needs two things from any
+        host: a <b>MIPI CSI input</b> for the HDMI bridge, and a <b>USB OTG / peripheral</b> port
+        for the gadget. Other boards have both — but a different chip means the platform glue
+        (camera pipeline, driver, device tree, boot) has to be ported first.</p>
+      <div class="boards">
+        <div class="brd ok">
+          <div class="tag">tested</div>
+          <div>
+            <h4>Radxa Dragon Q6A — Qualcomm QCS6490</h4>
+            <p>The reference board. Everything on this page runs here, end to end.</p>
+          </div>
+        </div>
+        <div class="brd maybe">
+          <div class="tag">untested</div>
+          <div>
+            <h4>Radxa ROCK 5T — Rockchip RK3588</h4>
+            <p>Has the two things that matter (2× MIPI CSI + USB-C OTG), but a different SoC — so
+              it'd need a port of the Qualcomm-specific bits. Not yet attempted.</p>
+          </div>
+        </div>
+        <div class="brd maybe">
+          <div class="tag">unverified</div>
+          <div>
+            <h4>ROCK 5U &amp; other CSI + OTG boards</h4>
+            <p>Plausibly portable if a board pairs a CSI input with a USB OTG port — RK3588 ROCK
+              models, others. Specs unconfirmed; treat as a starting point, not a promise.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div>Built by hand on a Radxa Dragon Q6A.
+      <div class="note">Not affiliated with Radxa or Qualcomm. "KVM" = keyboard-video-mouse, not the hypervisor.</div></div>
+    <div style="text-align:right">
+      <a href="https://github.com/AriBerisha/rad-kvm">github.com/AriBerisha/rad-kvm</a>
+      <div class="stamp">— EOF —</div>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+  var CMD = 'git clone https://github.com/AriBerisha/rad-kvm && cd rad-kvm && sudo ./install.sh';
+  function paint(t){
+    var h = t.replace(/&/g, '&amp;')
+             .replace(/^git\b/, '<span class="c">git</span>')
+             .replace(/\bsudo\b/, '<span class="c">sudo</span>');
+    document.getElementById('cmd').innerHTML = h;
+  }
+  function cp(b){
+    navigator.clipboard.writeText(CMD).then(function(){
+      var o = b.textContent; b.textContent = 'copied';
+      setTimeout(function(){ b.textContent = o; }, 1500);
+    });
+  }
+  var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var cur = document.getElementById('cur');
+  if (reduce){ paint(CMD); }
+  else {
+    var i = 0; cur.style.visibility = 'hidden';
+    (function type(){
+      if (i <= CMD.length){ paint(CMD.slice(0, i)); i++; setTimeout(type, 15 + Math.random()*32); }
+      else { cur.style.visibility = 'visible'; }
+    })();
+  }
+
+  /* faint, static copper/teal PCB traces — material texture, not motion */
+  (function(){
+    var c = document.getElementById('traces'), x = c.getContext('2d'), W, H, DPR;
+    function draw(){
+      DPR = Math.min(devicePixelRatio || 1, 2); W = innerWidth; H = innerHeight;
+      c.width = W*DPR; c.height = H*DPR; x.setTransform(DPR,0,0,DPR,0,0); x.clearRect(0,0,W,H);
+      var step = 48, cols = Math.ceil(W/step), rows = Math.ceil(H/step);
+      x.lineWidth = 1.2; x.lineCap = 'round'; x.lineJoin = 'round';
+      for (var n=0; n<Math.floor((cols*rows)/10); n++){
+        var gx = Math.floor(Math.random()*cols)*step + (Math.random()*16-8);
+        var gy = Math.floor(Math.random()*rows)*step + (Math.random()*16-8);
+        var copper = Math.random() < 0.78;
+        x.strokeStyle = copper ? 'rgba(167,118,43,0.10)' : 'rgba(12,158,134,0.10)';
+        x.beginPath(); x.moveTo(gx, gy);
+        var segs = 1 + Math.floor(Math.random()*3), px = gx, py = gy;
+        for (var s=0; s<segs; s++){
+          var horiz = Math.random() < 0.5, len = step*(1 + Math.floor(Math.random()*3));
+          if (horiz){ px += (Math.random()<0.5?-1:1)*len; } else { py += (Math.random()<0.5?-1:1)*len; }
+          if (Math.random() < 0.4){ var e = step*0.5; x.lineTo(px-(horiz?e:0), py-(horiz?0:e)); }
+          x.lineTo(px, py);
+        }
+        x.stroke();
+        x.beginPath(); x.arc(px, py, 2.1, 0, 7);
+        x.fillStyle = copper ? 'rgba(167,118,43,0.14)' : 'rgba(12,158,134,0.14)'; x.fill();
+      }
+    }
+    draw();
+    var t; addEventListener('resize', function(){ clearTimeout(t); t = setTimeout(draw, 200); });
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+[Unit]
+Description=q6a-kvm USB composite gadget (HID keyboard + mouse + mass storage)
+Documentation=https://github.com/AriBerisha/rad-kvm
+# The UDC only exists once the usb-peripheral DT overlay put a600000 in
+# peripheral mode and dwc3 probed; the script also waits for it defensively.
+After=systemd-modules-load.service local-fs.target
+Wants=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/q6a-kvm-gadget
+# Tear the gadget down cleanly on stop (unbind from the UDC).
+ExecStop=/bin/sh -c 'echo "" > /sys/kernel/config/usb_gadget/q6a-kvm/UDC 2>/dev/null || true'
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+[Unit]
+Description=q6a-kvm capture watchdog (auto-resync video when the target changes)
+After=q6a-kvm-streamer.service
+Wants=q6a-kvm-streamer.service
+
+[Service]
+ExecStart=/usr/local/bin/q6a-kvm-watchdog
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=Q6A-KVM: HDMI -> MJPEG stream (gst feeder + ustreamer)
+Documentation=https://github.com/AriBerisha/rad-kvm
+After=q6a-kvm-pipeline.service
+Wants=q6a-kvm-pipeline.service
+# Keep retrying even if the source isn't present yet (no burst cap).
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=/usr/local/bin/q6a-kvm-stream
+Restart=always
+RestartSec=5
+# systemd kills the whole cgroup on stop, so the backgrounded gst feeder dies too.
+
+[Install]
+WantedBy=multi-user.target

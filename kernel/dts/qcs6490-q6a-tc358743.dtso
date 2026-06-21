@@ -1,0 +1,127 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * TC358743 (HDMI -> MIPI CSI-2) bridge on Radxa Dragon Q6A, via CAM2 (2-lane).
+ * Geekworm C790 carrier board, using its FRONT 15-pin (1.0 mm) connector.
+ *
+ * STATUS: FIRST DRAFT — NOT YET TESTED ON HARDWARE.
+ *
+ * WHY CAM2 / 2-LANE (not CAM1 / 4-lane):
+ *   The Q6A 4-lane connector (CAM1) is a 31-pin 0.3 mm FPC (`CAM_31P`, with 5V
+ *   pins) — the C790 cannot mate with it. The Q6A 2-lane connectors (CAM2 J16,
+ *   CAM3 J7) are 15-pin 1.0 mm and wired to the *Raspberry Pi camera pinout*
+ *   (schematic v1.21 p.32: GND/data/clock interleave, pin11 reset, pin13 SCL,
+ *   pin14 SDA, pin15 3V3). The C790's FRONT 15-pin connector is that same Pi
+ *   pinout, so a standard 15-pin 1.0 mm FPC mates it to CAM2/CAM3. 2 lanes =>
+ *   ~1080p25-30 / 720p ceiling, which is fine for KVM (and matches the C790).
+ *
+ * Derived from the vendor's known-good 2-lane overlay
+ * (qcs6490-radxa-dragon-q6a-cam2-radxa-camera-8m-219.dtso). Changes:
+ *   - imx219 sensor node -> TC358743 bridge node;
+ *   - dropped the SoC MCLK fixed-clock / pwdn regulator (the connector's MCLK
+ *     pin 12 is unpopulated; the C790 runs off its own 27 MHz crystal);
+ *   - bridge gets a fixed "refclk" representing that 27 MHz crystal.
+ *
+ * VERIFY ON HARDWARE BEFORE TRUSTING:
+ *   [ ] I2C address on cci1_i2c0 — TC358743 default 0x0f; some carriers 0x0e.
+ *       i2cdetect on the cci1_i2c0 bus once the overlay is applied.
+ *   [ ] refclk frequency — confirm the C790's onboard crystal is 27 MHz.
+ *   [ ] data-lane / clock-lane ordering across the 15-pin FPC.
+ *   [ ] FPC contact orientation (same-side vs opposite-side cable) — a wrong
+ *       flip mirrors the pinout and shorts 3V3<->GND. Continuity-check pin 1
+ *       (GND) and pin 15 (3V3) end-to-end BEFORE powering.
+ *
+ * To target CAM3 instead: use port@3 / csiphy3_ep and &cci1_i2c1 (CCI_I2C3),
+ *   exclusive = "cci1_i2c1".
+ */
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	metadata {
+		title = "Enable TC358743 HDMI-to-CSI bridge on CAM2 (2-lane)";
+		compatible = "radxa,dragon-q6a";
+		category = "camera";
+		exclusive = "cci1_i2c0";
+		description = "Enable Toshiba TC358743 HDMI->MIPI CSI-2 bridge (Geekworm C790, front 15-pin) on CAM2 (2-lane).";
+	};
+};
+
+/* VFE RDI raw-dump capture buffers. */
+&{/reserved-memory} {
+	linux,cma {
+		compatible = "shared-dma-pool";
+		size = <0x0 0x8000000>;
+		reusable;
+		linux,cma-default;
+	};
+};
+
+/* 27 MHz reference from the C790's onboard oscillator (NOT a SoC MCLK). */
+&{/} {
+	tc358743_refclk: tc358743-refclk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <27000000>;
+	};
+};
+
+&camss {
+	vdda-phy-supply = <&vreg_l10c_0p88>;
+	vdda-pll-supply = <&vreg_l6b_1p2>;
+
+	status = "okay";
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		/* port index == CSIPHY id; CSIPHY2 == CAM2 == 2-lane (J16) */
+		port@2 {
+			reg = <2>;
+
+			csiphy2_ep: endpoint {
+				clock-lanes = <7>;
+				data-lanes = <0 1>;
+				remote-endpoint = <&tc358743_out>;
+			};
+		};
+	};
+};
+
+&cci1 {
+	status = "okay";
+};
+
+&cci1_i2c0 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "okay";
+
+	tc358743@f {
+		compatible = "toshiba,tc358743";
+		reg = <0x0f>;
+
+		clocks = <&tc358743_refclk>;
+		clock-names = "refclk";
+
+		port {
+			tc358743_out: endpoint {
+				remote-endpoint = <&csiphy2_ep>;
+				data-lanes = <1 2>;
+				clock-lanes = <0>;
+				/*
+				 * Mandatory: the tc358743 driver rejects the
+				 * endpoint with -EINVAL ("missing CSI-2
+				 * properties in endpoint") unless
+				 * nr_of_link_frequencies != 0. The driver also
+				 * checks 2*link_freq is in [62.5, 1000] Mbps and
+				 * programs its CSI PLL from it. 297 MHz =>
+				 * 594 Mbps/lane x2 lanes = 1188 Mbps, enough for
+				 * UYVY 1080p30 / 720p60 (our 2-lane ceiling).
+				 */
+				link-frequencies = /bits/ 64 <297000000>;
+			};
+		};
+	};
+};
