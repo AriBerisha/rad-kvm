@@ -1,0 +1,13 @@
+[Unit]
+Description=Q6A-KVM: TC358743 -> camss RDI capture pipeline
+Documentation=https://github.com/AriBerisha/rad-kvm
+# The configure script polls for /dev/media0 + the bridge subdev, so no strict
+# device ordering is needed beyond a late-boot start.
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/q6a-kvm-configure
+
+[Install]
+WantedBy=multi-user.target

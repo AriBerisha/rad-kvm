@@ -1,0 +1,39 @@
+# Kernel config requirements for q6a-kvm.
+#
+# Verified against the shipped vendor config:
+#   radxa-dragon-q6a_noble_gnome_r2  /  kernel 6.18.2-3-qcom
+#   (extracted to kernel/config-6.18.2-3-qcom)
+#
+# RESULT: the ONLY missing symbol is the TC358743 bridge driver.
+# Everything else this project needs is already enabled in the vendor kernel.
+
+# ---- THE GAP (must be added) -------------------------------------------------
+# Not present in the vendor kernel; no tc358743.ko shipped under /lib/modules.
+# Preferred fix: build out-of-tree as a module against the shipped
+# linux-headers-6.18.2-3-qcom (no full kernel rebuild). See docs/bringup-log.md.
+CONFIG_VIDEO_TC358743=m
+# Optional CEC support for the bridge:
+# CONFIG_VIDEO_TC358743_CEC=y
+
+# ---- ALREADY PRESENT (do not need changing; listed for reference) ------------
+# Capture engine (Phase 1)
+# CONFIG_VIDEO_QCOM_CAMSS=m
+# CONFIG_VIDEO_DEV=m
+# CONFIG_MEDIA_CONTROLLER=y
+#
+# Hardware video encode (Phase 2)
+# CONFIG_VIDEO_QCOM_VENUS=m
+# CONFIG_VIDEO_QCOM_IRIS=m
+#
+# USB device-controller + gadget stack (Phase 3) — all present
+# CONFIG_USB_DWC3=y
+# CONFIG_USB_DWC3_QCOM=m
+# CONFIG_USB_DWC3_DUAL_ROLE=y
+# CONFIG_USB_GADGET=y
+# CONFIG_USB_LIBCOMPOSITE=m
+# CONFIG_USB_CONFIGFS=m
+# CONFIG_USB_CONFIGFS_F_HID=y
+# CONFIG_USB_F_HID=m
+# CONFIG_USB_CONFIGFS_MASS_STORAGE=y
+# CONFIG_USB_F_MASS_STORAGE=m
+# CONFIG_USB_FUNCTIONFS=m         # (functionfs alternative for HID)

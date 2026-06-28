@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAD-KVM</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg:#0c1512; --panel:#11201b; --panel-2:#0a130f; --line:rgba(233,227,209,.12);
+    --line-2:rgba(233,227,209,.07); --fg:#e3ece6; --mut:#83998f;
+    --teal:#2fd6b6; --teal-d:#1c8d79; --copper:#c79a54; --ok:#3ddc84; --bad:#e5605f;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); }
+  button { font: inherit; cursor: pointer; }
+  ::selection { background: rgba(47,214,182,.28); }
+
+  /* ---- wordmark ---- */
+  .wm { font-family: var(--mono); font-weight: 600; letter-spacing: 2px; color: var(--fg); }
+  .wm .d { color: var(--teal); }
+
+  /* ---- auth ---- */
+  #auth { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background:
+    radial-gradient(120% 80% at 50% -10%, rgba(47,214,182,.08), transparent 55%), var(--bg); z-index: 10; padding: 20px; }
+  #card { width: 340px; max-width: 92vw; background: linear-gradient(180deg,var(--panel),var(--panel-2));
+    border: 1px solid var(--line); border-radius: 12px; padding: 26px 24px 22px;
+    box-shadow: 0 26px 60px -34px rgba(0,0,0,.8), 0 0 0 1px rgba(0,0,0,.3); }
+  #card .logo { font-family: var(--mono); font-weight: 600; font-size: 22px; letter-spacing: 2px; color: #fff; }
+  #card .logo .d { color: var(--teal); text-shadow: 0 0 18px rgba(47,214,182,.6); }
+  #card .model { font-family: var(--mono); font-size: 9.5px; letter-spacing: 1.5px; color: var(--copper); margin-top: 5px; }
+  #card .rule { height: 1px; background: var(--line); margin: 16px 0 14px; }
+  #card p { margin: 0 0 14px; color: var(--mut); font-size: 13px; }
+  #card input { width: 100%; margin: 7px 0; padding: 11px 12px; background: var(--panel-2); color: var(--fg);
+    border: 1px solid var(--line); border-radius: 7px; font: inherit; transition: border-color .15s; }
+  #card input:focus { outline: none; border-color: var(--teal); }
+  #card input::placeholder { color: #5d7167; }
+  #card button { width: 100%; margin-top: 12px; padding: 11px; background: var(--teal); color: #06221d;
+    border: 0; border-radius: 7px; font-weight: 600; letter-spacing: .3px; transition: filter .12s; }
+  #card button:hover { filter: brightness(1.07); }
+  #authErr { color: var(--bad); font-size: 12px; min-height: 16px; margin-top: 10px; font-family: var(--mono); }
+  /* two-factor setup */
+  #tfaToggle { display: flex; align-items: center; gap: 8px; margin: 14px 0 0; font-size: 13px;
+    color: var(--fg); cursor: pointer; user-select: none; }
+  #tfaToggle input { width: auto; margin: 0; accent-color: var(--teal); cursor: pointer; }
+  #tfaToggle .rec { font-family: var(--mono); font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+    color: var(--copper); border: 1px solid rgba(199,154,84,.4); border-radius: 20px; padding: 2px 7px; margin-left: auto; }
+  #tfaSetup { margin-top: 12px; }
+  .tfa-qr { background: #fff; border-radius: 8px; padding: 12px; display: flex; justify-content: center; min-height: 40px; }
+  .tfa-qr img, .tfa-qr svg { display: block; width: 168px; height: 168px; image-rendering: pixelated; }
+  .tfa-cap { margin: 12px 0 8px !important; color: var(--mut); font-size: 11.5px !important; line-height: 1.5; }
+  .tfa-key { display: block; font-family: var(--mono); font-size: 13px; letter-spacing: 1px; color: var(--teal);
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 9px 10px; word-break: break-all;
+    text-align: center; user-select: all; cursor: text; }
+
+  /* ---- app shell ---- */
+  #app { display: none; flex-direction: column; height: 100vh; }
+  #bar { display: flex; align-items: center; gap: 14px; padding: 10px 14px; background: var(--panel);
+    border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+  #bar .wm { font-size: 15px; }
+  .sig { display: flex; align-items: center; gap: 7px; padding: 4px 10px; border: 1px solid var(--line-2);
+    border-radius: 20px; font-family: var(--mono); font-size: 11px; color: var(--mut); }
+  #dot { width: 8px; height: 8px; border-radius: 50%; background: #5a6b63; display: inline-block; }
+  #dot.on { background: var(--ok); box-shadow: 0 0 8px rgba(61,220,132,.7); }
+  #dot.off { background: var(--bad); box-shadow: 0 0 8px rgba(229,96,95,.6); }
+  .spacer { flex: 1; }
+  .tool { background: transparent; color: var(--fg); border: 1px solid var(--line); border-radius: 7px;
+    padding: 7px 11px; font-size: 13px; transition: border-color .15s, background .15s; }
+  .tool:hover { border-color: var(--teal-d); }
+  .tool.active { background: rgba(47,214,182,.14); border-color: var(--teal); color: #eafaf5; }
+
+  #bodyrow { display: flex; flex: 1; min-height: 0; }
+  #stage { position: relative; flex: 1; display: flex; align-items: center; justify-content: center;
+    overflow: auto; padding: 16px; background:
+    repeating-linear-gradient(45deg, rgba(255,255,255,.012) 0 12px, transparent 12px 24px), var(--panel-2); }
+  #screen { max-width: 100%; max-height: 100%; background: #000; border: 1px solid var(--line);
+    border-radius: 6px; cursor: crosshair; box-shadow: 0 0 0 1px rgba(0,0,0,.5), 0 20px 50px -30px rgba(0,0,0,.9); }
+  #novideo { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(10,19,15,.86); }
+  #novideo.show { display: flex; }
+  .nv-card { text-align: center; max-width: 440px; padding: 28px 30px; border: 1px solid var(--line);
+    border-radius: 12px; background: linear-gradient(180deg,var(--panel),var(--panel-2)); }
+  .nv-card .pulse { width: 11px; height: 11px; border-radius: 50%; background: var(--copper);
+    margin: 0 auto 14px; box-shadow: 0 0 0 0 rgba(199,154,84,.5); animation: ping 1.8s ease-out infinite; }
+  @keyframes ping { 0%{box-shadow:0 0 0 0 rgba(199,154,84,.45)} 100%{box-shadow:0 0 0 14px rgba(199,154,84,0)} }
+  .nv-title { font-family: var(--mono); font-size: 13px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--copper); margin-bottom: 9px; }
+  .nv-msg { color: var(--mut); font-size: 13px; line-height: 1.6; }
+  #plHint { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: none;
+    align-items: center; gap: 6px; background: rgba(17,32,27,.92); border: 1px solid var(--teal-d);
+    color: var(--fg); font-family: var(--mono); font-size: 11px; letter-spacing: .5px; padding: 6px 12px;
+    border-radius: 20px; pointer-events: none; z-index: 5; box-shadow: 0 8px 24px -14px rgba(0,0,0,.8); }
+  #plHint b { color: var(--teal); font-weight: 600; }
+
+  /* ---- sidebar ---- */
+  #side { width: 330px; flex: 0 0 330px; border-left: 1px solid var(--line); background: var(--panel);
+    display: flex; flex-direction: column; overflow: hidden; }
+  #side.hidden { display: none; }
+  #tabs { display: flex; border-bottom: 1px solid var(--line); }
+  #tabs button { flex: 1; padding: 12px 8px; background: none; border: 0; color: var(--mut);
+    border-bottom: 2px solid transparent; font-family: var(--mono); font-size: 11px; letter-spacing: 1px;
+    text-transform: uppercase; transition: color .15s; }
+  #tabs button:hover { color: var(--fg); }
+  #tabs button.active { color: var(--teal); border-bottom-color: var(--teal); }
+  .pane { display: none; padding: 16px; overflow: auto; }
+  .pane.active { display: block; }
+  .pane h3 { margin: 2px 0 11px; font-family: var(--mono); font-size: 10px; text-transform: uppercase;
+    letter-spacing: 1.5px; color: var(--copper); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .grid button { padding: 10px 6px; background: var(--panel-2); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 7px; font-size: 12.5px; transition: border-color .12s, background .12s; }
+  .grid button:hover { border-color: var(--teal-d); }
+  .grid button:active { background: rgba(47,214,182,.18); border-color: var(--teal); }
+  textarea, .pane input { width: 100%; background: var(--panel-2); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 7px; padding: 9px 10px; margin: 4px 0; font: inherit; transition: border-color .15s; }
+  textarea:focus, .pane input:focus { outline: none; border-color: var(--teal); }
+  .pane input::placeholder, textarea::placeholder { color: #5d7167; }
+  textarea { resize: vertical; min-height: 66px; font-family: var(--mono); font-size: 12px; line-height: 1.5; }
+  .btn { padding: 10px 12px; background: var(--teal); color: #06221d; border: 0; border-radius: 7px; width: 100%;
+    margin-top: 8px; font-weight: 600; letter-spacing: .3px; transition: filter .12s; }
+  .btn:hover { filter: brightness(1.07); }
+  .row { display: flex; align-items: center; gap: 9px; padding: 10px; border: 1px solid var(--line);
+    border-radius: 8px; margin-bottom: 7px; background: var(--panel-2); }
+  .row .name { font-weight: 600; }
+  .row .sub { color: var(--mut); font-size: 11px; font-family: var(--mono); margin-top: 2px; }
+  .row .grow { flex: 1; min-width: 0; overflow: hidden; }
+  .mini { padding: 6px 11px; border-radius: 6px; border: 1px solid var(--line); background: transparent;
+    color: var(--fg); font-size: 12px; transition: border-color .12s, background .12s; }
+  .mini.go { background: rgba(47,214,182,.14); border-color: var(--teal); color: #eafaf5; }
+  .mini.go:hover { background: rgba(47,214,182,.24); }
+  .mini.del { color: var(--bad); border-color: rgba(229,96,95,.4); }
+  .mini.del:hover { background: rgba(229,96,95,.12); }
+  .hint { color: var(--mut); font-size: 11px; margin: 2px 0 6px; line-height: 1.5; }
+  .hint code { font-family: var(--mono); color: var(--teal); }
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--panel);
+    border: 1px solid var(--teal-d); color: #eafaf5; padding: 9px 16px; border-radius: 8px; font-size: 13px;
+    opacity: 0; transition: opacity .2s; z-index: 20; pointer-events: none;
+    box-shadow: 0 14px 30px -18px rgba(0,0,0,.8); }
+  #toast.show { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { .nv-card .pulse { animation: none; } }
+</style>
+</head>
+<body>
+  <!-- login / first-run setup -->
+  <div id="auth">
+    <form id="card" autocomplete="on">
+      <div class="logo">RAD<span class="d">·</span>KVM</div>
+      <div class="model">MODEL Q6A-KVM · REV 0.1</div>
+      <div class="rule"></div>
+      <p id="authSub">Sign in</p>
+      <input id="user" name="username" placeholder="username" autocomplete="username" autocapitalize="off" spellcheck="false">
+      <input id="pass" name="password" type="password" placeholder="password" autocomplete="current-password">
+      <input id="pass2" type="password" placeholder="confirm password" autocomplete="new-password" style="display:none">
+
+      <!-- two-factor (setup only) -->
+      <label id="tfaToggle" style="display:none">
+        <input type="checkbox" id="tfaOn"> Protect with an authenticator app
+        <span class="rec">recommended</span>
+      </label>
+      <div id="tfaSetup" style="display:none">
+        <div class="tfa-qr" id="tfaQR"></div>
+        <p class="tfa-cap">Scan with Google Authenticator, 1Password, Authy — any TOTP app — or enter the key by hand:</p>
+        <code class="tfa-key" id="tfaKey"></code>
+        <input id="tfaCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6"
+               placeholder="6-digit code to confirm">
+      </div>
+
+      <!-- authenticator code (login only, when 2FA is on) -->
+      <input id="loginCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6"
+             placeholder="authenticator code" style="display:none">
+
+      <button id="authBtn" type="submit">Continue</button>
+      <div id="authErr"></div>
+    </form>
+  </div>
+
+  <!-- the KVM -->
+  <div id="app">
+    <div id="bar">
+      <span class="wm">RAD<span class="d">·</span>KVM</span>
+      <span class="sig"><span id="dot"></span> <span id="status">connecting…</span></span>
+      <span class="spacer"></span>
+      <button id="mouseMode" class="tool" title="Absolute = 1:1 position (single screen). Relative = mouse deltas (multi-monitor / BIOS).">🖱 Absolute</button>
+      <button id="kbd" class="tool">⌨ Capture keyboard</button>
+      <button id="panel" class="tool active">☰ Panel</button>
+      <button id="logout" class="tool">Log out</button>
+    </div>
+    <div id="bodyrow">
+      <div id="stage">
+        <img id="screen" alt="target video">
+        <div id="plHint">Click the screen to control the mouse · <b>Esc</b> to release</div>
+        <div id="novideo"><div class="nv-card">
+          <div class="pulse"></div>
+          <div class="nv-title">No signal</div>
+          <div class="nv-msg" id="nvMsg">Waiting for a supported source signal…</div>
+        </div></div>
+      </div>
+      <aside id="side">
+        <div id="tabs">
+          <button data-tab="shortcuts" class="active">Shortcuts</button>
+          <button data-tab="devices">Devices</button>
+          <button data-tab="macros">Macros</button>
+        </div>
+
+        <section class="pane active" id="pane-shortcuts">
+          <h3>Key combos</h3>
+          <div class="grid" id="scGrid"></div>
+          <h3 style="margin-top:16px">Type / paste text</h3>
+          <textarea id="typeText" placeholder="Text typed into the target as keystrokes…"></textarea>
+          <button class="btn" id="typeSend">Send text</button>
+        </section>
+
+        <section class="pane" id="pane-devices">
+          <h3>Saved targets — Wake-on-LAN</h3>
+          <div id="devList"></div>
+          <h3 style="margin-top:14px">Add target</h3>
+          <input id="dName" placeholder="name (e.g. Office PC)">
+          <input id="dMac" placeholder="MAC  AA:BB:CC:DD:EE:FF">
+          <input id="dBcast" placeholder="broadcast (optional, default 255.255.255.255)">
+          <button class="btn" id="dAdd">Add target</button>
+        </section>
+
+        <section class="pane" id="pane-macros">
+          <h3>Macros</h3>
+          <div id="macList"></div>
+          <h3 style="margin-top:14px">New macro</h3>
+          <input id="mName" placeholder="name (e.g. Login)">
+          <textarea id="mScript" placeholder="text:admin&#10;key:Tab&#10;text:secret&#10;key:Enter&#10;delay:500&#10;chord:ControlLeft+AltLeft+Delete"></textarea>
+          <div class="hint">one step/line — <code>text:</code> <code>key:</code> <code>chord:A+B</code> <code>delay:</code> (ms). keys use JS codes (KeyA, Enter, ControlLeft…).</div>
+          <button class="btn" id="mAdd">Save macro</button>
+        </section>
+      </aside>
+    </div>
+  </div>
+  <div id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  let mode = "login", started = false, ws = null, capturing = false;
+
+  function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove("show"), 1800); }
+  const jpost = (path, obj) => fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj || {}) });
+
+  // ---------- auth ----------
+  let tfaSecret = null; // pending TOTP secret shown during setup (saved only after confirm)
+
+  async function refresh() {
+    const s = await (await fetch("/api/status")).json();
+    if (s.authed) return startKVM();
+    mode = s.configured ? "login" : "setup";
+    const setup = mode === "setup";
+    $("authSub").textContent = setup ? "First-time setup — create your account." : "Sign in";
+    $("pass2").style.display = setup ? "block" : "none";
+    $("pass").autocomplete = setup ? "new-password" : "current-password";
+    $("tfaToggle").style.display = setup ? "flex" : "none";
+    $("loginCode").style.display = (!setup && s.totp) ? "block" : "none";
+    $("auth").style.display = "flex";
+    $("user").focus();
+  }
+
+  // load the vendored QR generator on demand (only when 2FA setup is opened)
+  function loadQR() {
+    return window.qrcode ? Promise.resolve() : new Promise((res, rej) => {
+      const s = document.createElement("script"); s.src = "/qrcode.js"; s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+  async function genTFA() {
+    try {
+      await loadQR();
+      const user = encodeURIComponent($("user").value || "admin");
+      const d = await (await fetch("/api/2fa/new?user=" + user)).json();
+      tfaSecret = d.secret;
+      const q = window.qrcode(0, "M"); q.addData(d.uri); q.make();
+      $("tfaQR").innerHTML = "<img alt='Authenticator QR code' src='" + q.createDataURL(5, 12) + "'>";
+      $("tfaKey").textContent = d.grouped;
+    } catch (err) {
+      $("authErr").textContent = "couldn't start 2FA setup"; $("tfaOn").checked = false; $("tfaSetup").style.display = "none";
+    }
+  }
+  $("tfaOn").addEventListener("change", (e) => {
+    if (e.target.checked) { $("tfaSetup").style.display = "block"; genTFA(); }
+    else { $("tfaSetup").style.display = "none"; tfaSecret = null; }
+  });
+
+  $("card").addEventListener("submit", async (e) => {
+    e.preventDefault(); $("authErr").textContent = "";
+    const body = { username: $("user").value, password: $("pass").value };
+    if (mode === "setup") {
+      if ($("pass").value !== $("pass2").value) { $("authErr").textContent = "passwords do not match"; return; }
+      if ($("tfaOn").checked) {
+        const code = $("tfaCode").value.trim();
+        if (!tfaSecret) { $("authErr").textContent = "2FA is still loading — give it a second"; return; }
+        if (!/^\d{6}$/.test(code)) { $("authErr").textContent = "enter the 6-digit code from your app to confirm"; return; }
+        body.totp_secret = tfaSecret; body.code = code;
+      }
+    } else if ($("loginCode").style.display !== "none") {
+      body.code = $("loginCode").value.trim();
+    }
+    const r = await jpost(mode === "setup" ? "/api/setup" : "/api/login", body);
+    if (r.ok) { $("auth").style.display = "none"; startKVM(); }
+    else $("authErr").textContent = (await r.text()).trim() || "failed";
+  });
+
+  // ---------- shortcuts ----------
+  const SHORTCUTS = [
+    { label: "Ctrl+Alt+Del", codes: ["ControlLeft", "AltLeft", "Delete"] },
+    { label: "Alt+Tab", codes: ["AltLeft", "Tab"] },
+    { label: "Alt+F4", codes: ["AltLeft", "F4"] },
+    { label: "⌘ / Win", codes: ["MetaLeft"] },
+    { label: "Esc", codes: ["Escape"] },
+    { label: "Enter", codes: ["Enter"] },
+    { label: "Tab", codes: ["Tab"] },
+    { label: "PrtSc", codes: ["PrintScreen"] },
+    { label: "Ctrl+W", codes: ["ControlLeft", "KeyW"] },
+    { label: "Ctrl+Alt+T", codes: ["ControlLeft", "AltLeft", "KeyT"] },
+  ];
+  function buildShortcuts() {
+    const g = $("scGrid");
+    SHORTCUTS.forEach((s) => {
+      const b = document.createElement("button");
+      b.textContent = s.label;
+      b.addEventListener("click", () => { send({ t: "chord", codes: s.codes }); toast("sent " + s.label); });
+      g.appendChild(b);
+    });
+  }
+
+  // ---------- devices ----------
+  async function loadDevices() {
+    const list = await (await fetch("/api/devices")).json();
+    const box = $("devList"); box.textContent = "";
+    if (!list.length) { const p = document.createElement("div"); p.className = "hint"; p.textContent = "No saved targets yet."; box.appendChild(p); }
+    list.forEach((d) => {
+      const row = document.createElement("div"); row.className = "row";
+      const g = document.createElement("div"); g.className = "grow";
+      const n = document.createElement("div"); n.className = "name"; n.textContent = d.name;
+      const m = document.createElement("div"); m.className = "sub"; m.textContent = d.mac;
+      g.append(n, m);
+      const wake = document.createElement("button"); wake.className = "mini go"; wake.textContent = "Wake";
+      wake.addEventListener("click", async () => { const r = await jpost("/api/devices/wake", { id: d.id }); toast(r.ok ? "magic packet sent → " + d.name : "wake failed"); });
+      const del = document.createElement("button"); del.className = "mini del"; del.textContent = "✕";
+      del.addEventListener("click", async () => { await jpost("/api/devices/delete", { id: d.id }); loadDevices(); });
+      row.append(g, wake, del);
+      box.appendChild(row);
+    });
+  }
+  $("dAdd").addEventListener("click", async () => {
+    const r = await jpost("/api/devices", { name: $("dName").value, mac: $("dMac").value, broadcast: $("dBcast").value });
+    if (r.ok) { $("dName").value = $("dMac").value = $("dBcast").value = ""; loadDevices(); toast("target saved"); }
+    else toast((await r.text()).trim() || "add failed");
+  });
+
+  // ---------- macros ----------
+  async function loadMacros() {
+    const list = await (await fetch("/api/macros")).json();
+    const box = $("macList"); box.textContent = "";
+    if (!list.length) { const p = document.createElement("div"); p.className = "hint"; p.textContent = "No macros yet."; box.appendChild(p); }
+    list.forEach((m) => {
+      const row = document.createElement("div"); row.className = "row";
+      const g = document.createElement("div"); g.className = "grow";
+      const n = document.createElement("div"); n.className = "name"; n.textContent = m.name;
+      g.appendChild(n);
+      const run = document.createElement("button"); run.className = "mini go"; run.textContent = "Run";
+      run.addEventListener("click", async () => { const r = await jpost("/api/macros/run", { id: m.id }); toast(r.ok ? "running " + m.name : "run failed"); });
+      const del = document.createElement("button"); del.className = "mini del"; del.textContent = "✕";
+      del.addEventListener("click", async () => { await jpost("/api/macros/delete", { id: m.id }); loadMacros(); });
+      row.append(g, run, del);
+      box.appendChild(row);
+    });
+  }
+  $("mAdd").addEventListener("click", async () => {
+    const r = await jpost("/api/macros", { name: $("mName").value, script: $("mScript").value });
+    if (r.ok) { $("mName").value = $("mScript").value = ""; loadMacros(); toast("macro saved"); }
+    else toast((await r.text()).trim() || "save failed");
+  });
+
+  // ---------- tabs / panel ----------
+  document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll("#tabs button").forEach((x) => x.classList.remove("active"));
+    document.querySelectorAll(".pane").forEach((x) => x.classList.remove("active"));
+    b.classList.add("active"); $("pane-" + b.dataset.tab).classList.add("active");
+    if (b.dataset.tab === "devices") loadDevices();
+    if (b.dataset.tab === "macros") loadMacros();
+  }));
+  $("panel").addEventListener("click", () => { const s = $("side"); s.classList.toggle("hidden"); $("panel").classList.toggle("active", !s.classList.contains("hidden")); });
+
+  // ---------- source status overlay ----------
+  async function pollSource() {
+    let s;
+    try { s = await (await fetch("/api/source")).json(); } catch (e) { return; }
+    const nv = $("novideo");
+    const ok = s.online && (s.fps === undefined || s.fps > 0);
+    if (ok) { nv.classList.remove("show"); return; }
+    $("nvMsg").textContent = (s.width && s.height)
+      ? "Detected source " + s.width + "×" + s.height + ", but no frames are arriving. "
+        + "The 2-lane capture link carries up to 720p60 / 1080p30 — if your source is 1080p50/60 or higher, set it lower."
+      : "Waiting for a supported source signal…  (connect HDMI, or set the source to ≤720p60 / 1080p30).";
+    nv.classList.add("show");
+  }
+
+  // ---------- KVM (after auth) ----------
+  function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+  function startKVM() {
+    if (started) return; started = true;
+    $("app").style.display = "flex";
+    const screen = $("screen");
+    screen.src = "/stream";
+    // hide the Relative toggle if the relative-mouse device isn't available
+    fetch("/api/status").then((r) => r.json()).then((s) => { if (!s.relmouse) $("mouseMode").style.display = "none"; }).catch(() => {});
+
+    function connect() {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      ws = new WebSocket(proto + "://" + location.host + "/ws/input");
+      ws.onopen = () => { $("dot").className = "on"; $("status").textContent = "connected"; };
+      ws.onclose = () => { $("dot").className = "off"; $("status").textContent = "reconnecting…"; setTimeout(connect, 1000); };
+      ws.onerror = () => ws.close();
+    }
+
+    // --- mouse: absolute (1:1 position) or relative (deltas + pointer lock) ---
+    let relMouse = false, locked = false;
+    const frac = (e) => { const r = screen.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }; };
+    const sendAbs = (e) => { const p = frac(e); send({ t: "m", x: p.x, y: p.y, buttons: e.buttons }); };
+    // round: HiDPI/scaled displays report fractional movement, which would fail
+    // server-side JSON decode and drop the whole event (incl. the click).
+    const sendRel = (e) => { send({ t: "mr", dx: Math.round(e.movementX), dy: Math.round(e.movementY), buttons: e.buttons }); };
+
+    screen.addEventListener("mousemove", (e) => { if (relMouse) { if (locked) sendRel(e); } else sendAbs(e); });
+    screen.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      if (relMouse) { if (!locked) screen.requestPointerLock(); else send({ t: "mr", dx: 0, dy: 0, buttons: e.buttons }); }
+      else sendAbs(e);
+    });
+    screen.addEventListener("mouseup", (e) => {
+      e.preventDefault();
+      if (relMouse) { if (locked) send({ t: "mr", dx: 0, dy: 0, buttons: e.buttons }); }
+      else sendAbs(e);
+    });
+    screen.addEventListener("contextmenu", (e) => e.preventDefault());
+    screen.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const wsign = e.deltaY < 0 ? 1 : -1;
+      // in relative mode scroll goes out the relative device too (so it works in BIOS/UEFI)
+      if (relMouse && locked) send({ t: "mr", dx: 0, dy: 0, buttons: e.buttons, wheel: wsign });
+      else send({ t: "w", dy: wsign });
+    }, { passive: false });
+
+    document.addEventListener("pointerlockchange", () => {
+      const wasLocked = locked;
+      locked = (document.pointerLockElement === screen);
+      // releasing the lock (Esc / tab-switch) mid-drag would otherwise strand a held button
+      if (relMouse && wasLocked && !locked) send({ t: "mr", dx: 0, dy: 0, buttons: 0 });
+      $("plHint").style.display = (relMouse && !locked) ? "flex" : "none";
+    });
+    $("mouseMode").addEventListener("click", () => {
+      relMouse = !relMouse;
+      $("mouseMode").classList.toggle("active", relMouse);
+      $("mouseMode").textContent = relMouse ? "🖱 Relative" : "🖱 Absolute";
+      if (!relMouse && document.pointerLockElement) document.exitPointerLock();
+      $("plHint").style.display = relMouse ? "flex" : "none";
+      if (relMouse) toast("Relative mouse: click to control · Esc releases · use the Esc shortcut to send Escape to the target");
+    });
+
+    const setCapture = (on) => { capturing = on; $("kbd").classList.toggle("active", on); $("kbd").textContent = on ? "⌨ Keyboard captured" : "⌨ Capture keyboard"; };
+    $("kbd").addEventListener("click", () => setCapture(!capturing));
+    const inField = (e) => { const t = e.target.tagName; return t === "INPUT" || t === "TEXTAREA"; };
+    const held = new Set(); // track held keys so we can release them if focus is lost
+    window.addEventListener("keydown", (e) => { if (!capturing || inField(e)) return; e.preventDefault(); if (e.repeat) return; held.add(e.code); send({ t: "k", code: e.code, down: true }); });
+    window.addEventListener("keyup", (e) => { if (!capturing || inField(e)) return; e.preventDefault(); held.delete(e.code); send({ t: "k", code: e.code, down: false }); });
+    window.addEventListener("blur", () => { setCapture(false); held.forEach((c) => send({ t: "k", code: c, down: false })); held.clear(); });
+
+    $("typeSend").addEventListener("click", () => { const v = $("typeText").value; if (v) { send({ t: "type", text: v }); toast("typed " + v.length + " chars"); } });
+    $("logout").addEventListener("click", async () => { await jpost("/api/logout", {}); location.reload(); });
+
+    buildShortcuts();
+    connect();
+    pollSource();
+    setInterval(pollSource, 3000);
+  }
+
+  refresh();
+})();
+</script>
+</body>
+</html>
